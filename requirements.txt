@@ -11,7 +11,7 @@ tqdm
 langchain
 pandas
 accelerate
-
+openai
 matplotlib
 seaborn
 torch==2.0.1 
