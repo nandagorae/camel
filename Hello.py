@@ -17,7 +17,17 @@ from transformers import (
 from peft import (
     PeftModel, PeftConfig
 )
-! huggingface-cli login --token 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
+
+import os
+import sys
+import subprocess
+
+huggingface_bin_path = "/home/user/.local/bin"
+os.environ["PATH"] = f"{huggingface_bin_path}:{os.environ['PATH']}"
+
+subprocess.run(["huggingface-cli", "login", "--token", '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'])
+
+
 PEFT_MODEL = "RAIJAY/7B_QA_68348"
 
 bnb_config = BitsAndBytesConfig(
