@@ -1,6 +1,6 @@
 ########################################################################################################
 #Import LangChain related modules
-
+import openai
 from typing import List #import the list Class from Typing Module
 from langchain.chat_models import ChatOpenAI #This class represents an instance of the Open AI Chatbot.
 from langchain.prompts.chat import (
