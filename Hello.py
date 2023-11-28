@@ -54,7 +54,7 @@ class CAMELAgent:
 import os
 import time
 
-os.environ["OPENAI_API_KEY"] = 'sk-Wzh2pAacR2E8cBHlA1lAT3BlbkFJHLz0g6RfhKOwjuD' #PUT your API Key
+os.environ["OPENAI_API_KEY"] = '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' #PUT your API Key
 
 #### Configuring Streamlit for Creating Web apps
 import streamlit as st #Open-source Python library that makes it easy to create beautiful, custom web apps
