@@ -14,5 +14,6 @@ accelerate
 openai
 matplotlib
 seaborn
-torch==2.0.1 
+torch
 accelerate
+bitsandbytes
