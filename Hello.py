@@ -1,19 +1,100 @@
+from datetime import datetime
+
+#Third-Party Libraries
+import torch
+from torch import bfloat16
+from scipy.special import softmax
+from pylab import rcParams
+from tqdm import tqdm_notebook as tqdm
+from tqdm.auto import tqdm
+from sklearn.model_selection import train_test_split
+
+#Transformers Library
+from transformers import (
+    AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+)
+#Peft Library
+from peft import (
+    PeftModel, PeftConfig
+)
+! huggingface-cli login --token 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
+PEFT_MODEL = "RAIJAY/7B_QA_68348"
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type='nf4',
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
+
+config = PeftConfig.from_pretrained(PEFT_MODEL)
+
+# CUDA 사용 가능 여부 확인
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = AutoModelForCausalLM.from_pretrained(
+    config.base_model_name_or_path,
+    return_dict=True,
+    quantization_config=bnb_config,
+    device_map="auto",
+    trust_remote_code=True,
+) # 모델을 적절한 장치에 할당
+
+tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
+tokenizer.pad_token = tokenizer.eos_token
+
+concat_model = PeftModel.from_pretrained(model, PEFT_MODEL).to(device)  # 모델을 적절한 장치에 할당
+PEFT_MODEL = "DMPark/StepbyStep_SanFrancisco"
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit = True,
+    bnb_4bit_quant_type = 'nf4',
+    bnb_4bit_use_double_quant = True,
+    bnb_4bit_compute_dtype = torch.bfloat16
+)
+
+config = PeftConfig.from_pretrained(PEFT_MODEL)
+
+# CUDA 사용 가능 여부 확인
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = AutoModelForCausalLM.from_pretrained(
+    config.base_model_name_or_path,
+    return_dict = True,
+    quantization_config = bnb_config,
+    device_map = "auto",
+    trust_remote_code = True,
+) # 모델을 적절한 장치에 할당
+
+tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
+tokenizer.pad_token = tokenizer.eos_token
+
+model = PeftModel.from_pretrained(concat_model, PEFT_MODEL).to(device) 
+generation_config = model.generation_config
+generation_config.max_new_tokens = 1000
+generation_config.temperature = 1
+generation_config.top_p = 1
+generation_config.num_return_sequences = 1
+generation_config.pad_token_id = tokenizer.eos_token_id
+generation_config.eos_token_id = tokenizer.eos_token_id
+
+
 ########################################################################################################
 #Import LangChain related modules
 
-from typing import List #import the list Class from Typing Module
-from langchain.chat_models import ChatOpenAI #This class represents an instance of the Open AI Chatbot.
+from typing import List
+from langchain.callbacks import get_openai_callback
+
 from langchain.prompts.chat import (
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
-) # This imports two classes from prompt module
+)
 from langchain.schema import (
     AIMessage,
     HumanMessage,
     SystemMessage,
     BaseMessage,
 )
-
 ########################################################################################################
 #Define a CAMEL agent helper class
 class CAMELAgent:
@@ -21,11 +102,11 @@ class CAMELAgent:
     def __init__(
         self,
         system_message: SystemMessage,
-        model: ChatOpenAI,
+        model: model,
     ) -> None:
         self.system_message = system_message
         self.model = model
-        self.init_messages() # method to initialize the stored_messages instance variable.
+        self.init_messages()
 
     def reset(self) -> None:
         self.init_messages()
@@ -36,25 +117,30 @@ class CAMELAgent:
 
     def update_messages(self, message: BaseMessage) -> List[BaseMessage]:
         self.stored_messages.append(message)
+        # print(self.stored_messages)
         return self.stored_messages
 
-    def step(
-        self,
-        input_message: HumanMessage,
-    ) -> AIMessage:
-        messages = self.update_messages(input_message)
+    def step(self, input_message: HumanMessage) -> AIMessage:
+        # 입력 메시지를 모델이 이해할 수 있는 형태로 변환
+        input_text = input_message.content
+        encoding = tokenizer(input_text, return_tensors="pt").to(device)
 
-        output_message = self.model(messages)
+        # 모델을 사용하여 출력 생성
+        with torch.inference_mode():
+            outputs = model.generate(
+                input_ids=encoding.input_ids,
+                attention_mask=encoding.attention_mask,
+                # ... 기타 필요한 매개변수 ...
+            )
+        
+        # 출력을 디코딩하여 응답 생성
+        response_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        output_message = AIMessage(content=response_text)
+
         self.update_messages(output_message)
-
         return output_message
 
-########################################################################################################
-#Setup OpenAI API key and roles and task for role-playing
-import os
-import time
 
-os.environ["OPENAI_API_KEY"] = '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' #PUT your API Key
 
 #### Configuring Streamlit for Creating Web apps
 import streamlit as st #Open-source Python library that makes it easy to create beautiful, custom web apps
@@ -94,13 +180,13 @@ word_limit = 50 # word limit for task brainstorming
 
 task_specifier_sys_msg = SystemMessage(content="You can make a task more specific.")
 task_specifier_prompt = (
-"""Here is a task that {assistant_role_name} will help {user_role_name} to complete: {task}.
+"""Here is a task that {assistant_role_name} will discuss with {user_role_name} to : {task}.
 Please make it more specific. Be creative and imaginative.
-Please reply with the specified task in {word_limit} words or less. Do not add anything else."""
+Please reply with the full task in {word_limit} words or less. Do not add anything else."""
 )
 
 task_specifier_template = HumanMessagePromptTemplate.from_template(template=task_specifier_prompt)
-task_specify_agent = CAMELAgent(task_specifier_sys_msg, ChatOpenAI(temperature=1.0))
+task_specify_agent = CAMELAgent(task_specifier_sys_msg, model)
 task_specifier_msg = task_specifier_template.format_messages(assistant_role_name=assistant_role_name,
                                                              user_role_name=user_role_name,
                                                              task=task, word_limit=word_limit)[0]
@@ -178,8 +264,8 @@ def get_sys_msgs(assistant_role_name: str, user_role_name: str, task: str):
 ########################################################################################################
 #Create AI assistant agent and AI user agent from obtained system messages
 assistant_sys_msg, user_sys_msg = get_sys_msgs(assistant_role_name, user_role_name, specified_task)
-assistant_agent = CAMELAgent(assistant_sys_msg, ChatOpenAI(temperature=0.2))
-user_agent = CAMELAgent(user_sys_msg, ChatOpenAI(temperature=0.2))
+assistant_agent = CAMELAgent(assistant_sys_msg, model)
+user_agent = CAMELAgent(user_sys_msg, model)
 
 # Reset agents
 assistant_agent.reset()
